@@ -1,0 +1,31 @@
+{
+  "name": "dw-bangchak-mda-automate-testing",
+  "version": "1.0.0",
+  "scripts": {
+    "test:smoke": "playwright test --grep @smoke",
+    "test:ui": "playwright test --ui",
+    "auth": "playwright test --project=setup",
+    "auth:manual": "MANUAL_LOGIN=1 playwright test --project=setup --headed --workers=1",
+    "report": "playwright show-report",
+    "lint": "eslint .",
+    "typecheck": "tsc",
+    "format": "prettier --write .",
+    "test": "playwright test",
+    "test:reuse-auth": "playwright test --project=chromium --no-deps"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^20.19.43",
+    "dotenv": "^18.0.10",
+    "eslint": "^9.39.5",
+    "eslint-plugin-playwright": "^2.12.2",
+    "prettier": "^3.10.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.73.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}
