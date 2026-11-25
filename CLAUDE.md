@@ -26,8 +26,7 @@ Maintained by one QA. Follow README conventions; import `{ test, expect }` from 
 
 ## Reuse from dw-postmax-automate-testing (port to TS when a case needs it)
 
-- `helpers/orderData.js` parseCsv/readDownload → Activity Logs export, User Management batch upload
-- `helpers/portal.js` openPortal/forUsers → second browser context as another role (TS02-TC03, Approve/Reject)
+- Done: parseCsv/readDownload → `helpers/csv.ts`; openPortal → `openAs(role)` fixture
 - `pages/BasePage.js` access-denied locators → an `AccessDeniedComponent` (composition, not a base class)
 - `helpers/thaiDate.js`, `helpers/testData.js` → date filters, random names/emails
 
@@ -35,3 +34,4 @@ Maintained by one QA. Follow README conventions; import `{ test, expect }` from 
 
 - UAT/DEV base URLs; test accounts per role and whether MFA can be disabled for them.
 - `data-testid` not agreed with devs yet; locators unverified until the app is reachable.
+- User Management: Azure test users for `config/test-users.ts`, a Super user of BCPG, and a dev reset for approved users.

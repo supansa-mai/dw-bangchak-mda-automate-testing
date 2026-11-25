@@ -52,12 +52,13 @@ npm run lint && npm run typecheck
 tests/<feature>/*.spec.ts     one folder per sheet tab (authentication, company-management, user-management, activity-logs)
 tests/auth.setup.ts           sign in per role → .auth/
 pages/*.page.ts               page objects (actions + locators, no assertions)
-pages/components/*.component.ts   parts shared across pages (sidebar, table, dialog) – add when needed
-fixtures/index.ts             custom `test`: page objects + `role` option
+pages/components/*.component.ts   parts shared across pages (sidebar, toast, pagination, empty state);
+                              parts of one page (its dialogs, filters) stay in its page file
+fixtures/index.ts             custom `test`: page objects, `role` option, `openAs(role)` = a second window as another role
 config/environments.ts        base URL + timeoutScale per env, scaled()
 config/auth.ts                roles, session files, credentials from .env
-helpers/                      reusable code that isn't a page: test data, CSV/date parsing, multi-role sessions
-                              (created with its first helper)
+config/test-users.ts          Azure test users that User Management tests change and put back (emails in .env)
+helpers/                      reusable code that isn't a page: test data, CSV files, table sorting
 ```
 
 ## Adding a test case
@@ -87,5 +88,13 @@ test.describe('TS02-TC01 ระบบพาไปหน้า Home ตาม Rol
 - No `waitForTimeout`; wait with `expect(...)` (web-first assertions) instead.
 - Every test creates its own data and can run alone, in any order.
 - Cases with status On Hold → `test.fixme('... (On Hold, <ref>)')`.
-- Tags: `@smoke` = critical path.
+- Tags (`{ tag: '...' }` option, not in the title): `@smoke` = critical path; `@creates-data` = leaves records on the
+  env that can't be deleted (companies). Day-to-day runs skip them: `npm run test:no-data`.
+- Data the tests create gets a readable unique name starting with `AUTO`, e.g. `AUTO Star Power UIOM` (`uniqueName()` in `helpers/test-data.ts`), so it can be found and cleaned up.
+- Users can't be created (they come from the Azure sync), so User Management tests use dedicated test users from
+  `config/test-users.ts` and put them back in `afterEach` (reject → Unassigned, toggle → Active). Each user belongs to
+  one spec file, and that file runs `serial`. Approving a user can't be undone, so those cases wait for a dev reset.
+- A sheet case that can't be written yet (waits for another page or a decision) → `todo('<what> (รอ <what>)')`.
+- A case that stays manual (Azure sync, signing in as a test user behind MFA, states that can't be set up safely on
+  UAT) is not in the specs: its sheet row gets Note `Manual: <reason>`.
 - **Done** = passes `--repeat-each=5`, lint + typecheck clean, sheet's Automate column updated.
