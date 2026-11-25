@@ -2,6 +2,8 @@ import { test, expect, todo } from '@fixtures';
 import { credentialsFor } from '@config/auth';
 import { csvFile, parseCsv, readDownload } from '@helpers/csv';
 import { randomLetters } from '@helpers/test-data';
+import { expectNewLog } from '@helpers/activity-log';
+import type { LogQuery } from '@pages/activity-log.page';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
 
@@ -45,7 +47,24 @@ test.describe('TS05-TC01 System Admin สามารถ Upload to Edit Batch �
     expect(parseCsv(await readDownload(download)).header).toEqual(HEADER);
   });
 
-  todo('บันทึก Export log ตอนดาวน์โหลด template (รอ ActivityLogPage)');
+  test('บันทึก Export log ตอนดาวน์โหลด template', async ({
+    userManagementPage: users,
+    activityLogPage: logs,
+  }) => {
+    const query = {
+      email: credentialsFor('system-admin').email,
+      activity: 'Export',
+      object: 'Template',
+    } satisfies LogQuery;
+    const before = await logs.count(query);
+    await users.goto();
+    await users.uploadBatchButton.click();
+
+    await users.batchDialog.downloadTemplate();
+
+    const log = await expectNewLog(logs, query, before, 'downloaded template "User batch update template"');
+    await expect(log).toContainText('MDA_USER_ROLE_UPDATE_TEMPLATE.csv');
+  });
 });
 
 test.describe('TS05-TC02 การแก้ไขผู้ใช้งานแบบกลุ่มสำเร็จ - ข้อมูลถูกต้องทุกแถว', () => {
@@ -70,7 +89,7 @@ test.describe('TS05-TC02 การแก้ไขผู้ใช้งานแ�
     'Confirm แล้วผู้ใช้ได้ Role/Company ตามไฟล์: Unassigned → Pending, System Admin → Approved (รอ test user ของ spec นี้ใน .env)',
   );
   todo('ผู้ใช้ Pending ถูกแทนค่าใหม่ / ผู้ใช้ Approved บันทึกทันที (รอ test user ของ spec นี้ใน .env)');
-  todo('บันทึก Edit log 1 รายการต่อไฟล์ (รอ ActivityLogPage)');
+  todo('บันทึก Edit log 1 รายการต่อไฟล์ (รอ test user ของ spec นี้ใน .env)');
 });
 
 test.describe('TS05-TC03 ตรวจสอบไฟล์ที่มีข้อมูลผิดพลาด', () => {

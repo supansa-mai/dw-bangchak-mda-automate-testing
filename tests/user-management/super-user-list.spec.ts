@@ -1,6 +1,8 @@
 import { test, expect, todo } from '@fixtures';
 import { credentialsFor } from '@config/auth';
 import { uniqueName } from '@helpers/test-data';
+import { expectLogged, expectNewLog } from '@helpers/activity-log';
+import { ActivityLogPage, type LogQuery } from '@pages/activity-log.page';
 import { COLUMNS } from '@pages/user-management.page';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
@@ -109,16 +111,42 @@ test.describe('TS06-TC02 การค้นหาและกรองผู้�
     await expect(users.rows).toHaveCount(0);
   });
 
-  test('กดกากบาท ล้างตัวเลือกทั้งหมดกลับเป็นค่าเริ่มต้น', async ({ userManagementPage: users }) => {
-    await users.statusFilter.select('Pending', 'Approved');
-    await expect(users.statusFilter.trigger).toContainText('Pending, Approved');
+  test('เลือกค่าใหม่ แทนค่าเดิมในตัวกรอง', async ({ userManagementPage: users }) => {
+    await users.statusFilter.select('Pending');
+
+    await users.statusFilter.select('Approved');
+
+    await expect(users.statusFilter.trigger).toContainText('Approved');
+    await expect(users.statusFilter.trigger).not.toContainText('Pending');
+    await expect.poll(async () => new Set(await users.columnTexts('Status'))).toEqual(new Set(['Approved']));
+  });
+
+  // Verify on the real page: the single-select filters still have a clear (x) button
+  test('กดกากบาท ล้างตัวเลือกกลับเป็นค่าเริ่มต้น', async ({ userManagementPage: users }) => {
+    await users.statusFilter.select('Approved');
 
     await users.statusFilter.clearButton.click();
 
     await expect(users.statusFilter.trigger).toContainText('All Statuses');
   });
 
-  // Sheet uses Company BCPG and "System Admin" in the filters, which a Super user of BCP can't pick (see report)
-  todo('กรอง Company ของบริษัทอื่น / เลือก Role System Admin (Test data ใน sheet ขัดกับสิทธิ์ Super user)');
-  todo('บันทึก Access และ Search log (รอ ActivityLogPage)');
+  test('บันทึก Access และ Search log ของ Super user', async ({ userManagementPage: users, openAs }) => {
+    const actor = credentialsFor('super-user').email;
+    const adminLogs = new ActivityLogPage(await openAs('system-admin'));
+    const access = { email: actor, activity: 'Access', object: 'User management' } satisfies LogQuery;
+    const before = await adminLogs.count(access);
+    const keyword = uniqueName('NotFound');
+
+    await users.goto();
+    await users.search(keyword);
+    await expect(users.emptyState.title).toBeVisible();
+
+    await expect(await expectNewLog(adminLogs, access, before, 'accessed User management')).toBeVisible();
+    const search = await expectLogged(
+      adminLogs,
+      { email: actor, activity: 'Search', object: 'User management' },
+      `"${keyword}"`,
+    );
+    await expect(search).toContainText('found 0 result(s)');
+  });
 });

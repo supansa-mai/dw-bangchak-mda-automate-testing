@@ -1,4 +1,6 @@
 import { test, expect, todo } from '@fixtures';
+import { credentialsFor } from '@config/auth';
+import { expectLogged } from '@helpers/activity-log';
 import { uniqueName } from '@helpers/test-data';
 import { TOAST_COMPANY_EDITED } from '@pages/company-management.page';
 
@@ -33,14 +35,11 @@ test.describe('TS03-TC01 System Admin สามารถแก้ไขชื่
     await expect(companies.editDialog.submitButton).toBeDisabled();
   });
 
-  test('ไม่แก้ค่าแล้วกด Save ไม่ error ว่าชื่อซ้ำกับตัวเอง', async ({ companyManagementPage: companies }) => {
-    const mainCompanyBefore = await companies.mainCompanyOf(UNCHANGED_COMPANY).textContent();
-
+  test('ไม่แก้ค่า ปุ่ม Save กดไม่ได้', async ({ companyManagementPage: companies }) => {
     await companies.openEditDialog(UNCHANGED_COMPANY);
-    await companies.editDialog.submit();
 
-    await expect(companies.editDialog.root).toBeHidden();
-    await expect(companies.mainCompanyOf(UNCHANGED_COMPANY)).toHaveText(mainCompanyBefore ?? '');
+    await expect(companies.editDialog.companyNameInput).toHaveValue(UNCHANGED_COMPANY);
+    await expect(companies.editDialog.submitButton).toBeDisabled();
   });
 
   test('แก้ค่าแล้วกด Cancel ข้อมูลเดิมไม่เปลี่ยน', async ({ companyManagementPage: companies }) => {
@@ -52,8 +51,6 @@ test.describe('TS03-TC01 System Admin สามารถแก้ไขชื่
     await expect(companies.editDialog.root).toBeHidden();
     await expect(companies.row(UNCHANGED_COMPANY)).toBeVisible();
   });
-
-  todo('บันทึก View log ตอนเปิด modal และ Edit log เฉพาะฟิลด์ที่เปลี่ยน (รอ ActivityLogPage)');
 });
 
 test.describe('TS03-TC02 System Admin สามารถแก้ไข Main Company', () => {
@@ -71,7 +68,7 @@ test.describe('TS03-TC02 System Admin สามารถแก้ไข Main Com
   test(
     'แก้ชื่อและ Main Company ทุกแบบสำเร็จ',
     { tag: '@creates-data' },
-    async ({ companyManagementPage: companies, userManagementPage: users }) => {
+    async ({ companyManagementPage: companies, userManagementPage: users, activityLogPage: logs }) => {
       const dialog = companies.editDialog;
       const name = uniqueName();
       const renamed = `${name} Edited`;
@@ -130,10 +127,38 @@ test.describe('TS03-TC02 System Admin สามารถแก้ไข Main Com
         await expect(users.companyFilter.option(name)).toBeHidden();
         await expect(users.companyFilter.option(renamed)).toBeHidden();
       });
+
+      await test.step('บันทึก View log และ Edit log 1 รายการต่อการ Save เฉพาะฟิลด์ที่เปลี่ยน', async () => {
+        const admin = credentialsFor('system-admin').email;
+        await expect(
+          await expectLogged(
+            logs,
+            { email: admin, activity: 'View', object: 'Company' },
+            `viewed Company "${name}"`,
+          ),
+        ).not.toHaveCount(0);
+
+        const edits = { email: admin, activity: 'Edit', object: 'Company' } as const;
+        const edited = await expectLogged(logs, edits, `edited Company "${name}"`);
+        for (const change of [
+          'Main company: BCP → BCPG',
+          'Main company: BCPG → None',
+          'Main company: None → BBGI',
+        ]) {
+          await expect(edited.filter({ hasText: change })).toHaveCount(1);
+        }
+        const renameLog = (await expectLogged(logs, edits, `Company name: ${name} → ${renamed}`)).first();
+        await expect(renameLog).not.toContainText('Main company');
+        await expect(
+          await expectLogged(
+            logs,
+            edits,
+            `Company name: ${renamed} → ${finalName}; Main company: BBGI → BCP`,
+          ),
+        ).toHaveCount(1);
+      });
     },
   );
-
-  todo('บันทึก Edit log 1 รายการแม้แก้หลายฟิลด์ (รอ ActivityLogPage)');
 });
 
 test.describe('TS03-TC03 ตรวจสอบผลกระทบเมื่อแก้ชื่อบริษัท', () => {

@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { FilePayload } from '@helpers/csv';
+import { SelectFilter } from '@pages/components/select-filter.component';
 import { EmptyStateComponent } from '@pages/components/empty-state.component';
 import { PaginationComponent } from '@pages/components/pagination.component';
 import { SidebarComponent } from '@pages/components/sidebar.component';
@@ -16,35 +17,6 @@ export const TOAST_USER_APPROVED = 'Successfully approved user';
 export const TOAST_USER_REJECTED = 'Successfully rejected user';
 
 export type UserForm = { role?: RoleName; companies?: string[] };
-
-/** A filter that shows "All Roles" until options are picked; several options can be picked */
-export class MultiSelectFilter {
-  readonly trigger: Locator;
-  readonly clearButton: Locator;
-
-  constructor(
-    private readonly page: Page,
-    allLabel: string,
-  ) {
-    // Verify on the real page: the trigger keeps its name after options are picked (it shows them instead)
-    this.trigger = page.getByRole('combobox', { name: allLabel });
-    this.clearButton = this.trigger.getByRole('button', { name: /clear/i });
-  }
-
-  option(name: string) {
-    return this.page.getByRole('option', { name, exact: true });
-  }
-
-  get options() {
-    return this.page.getByRole('option');
-  }
-
-  async select(...names: string[]) {
-    await this.trigger.click();
-    for (const name of names) await this.option(name).click();
-    await this.page.keyboard.press('Escape');
-  }
-}
 
 /** Confirm popups: "Update User Detail?", "Approve this user?", "Reject 3 users?", ... */
 export class ConfirmDialog {
@@ -188,9 +160,9 @@ export class UserManagementPage {
   readonly heading: Locator;
   readonly uploadBatchButton: Locator;
   readonly searchInput: Locator;
-  readonly statusFilter: MultiSelectFilter;
-  readonly roleFilter: MultiSelectFilter;
-  readonly companyFilter: MultiSelectFilter;
+  readonly statusFilter: SelectFilter;
+  readonly roleFilter: SelectFilter;
+  readonly companyFilter: SelectFilter;
   readonly table: Locator;
   readonly rows: Locator;
   /** Super user only: "Selected 0 items" with bulk Approve / Reject */
@@ -199,6 +171,8 @@ export class UserManagementPage {
   readonly batchDialog: BatchUploadDialog;
   readonly approveDialog: ConfirmDialog;
   readonly rejectDialog: ConfirmDialog;
+  /** Shown when another Super user changed one of the picked users first; nothing is saved */
+  readonly statusUpdatedDialog: { root: Locator; refreshButton: Locator };
   readonly emptyState: EmptyStateComponent;
   readonly pagination: PaginationComponent;
   readonly sidebar: SidebarComponent;
@@ -208,9 +182,9 @@ export class UserManagementPage {
     this.heading = page.getByRole('heading', { name: 'User Management', level: 1 });
     this.uploadBatchButton = page.getByRole('button', { name: 'Upload to Edit Batch' });
     this.searchInput = page.getByPlaceholder('Search by Email or Name');
-    this.statusFilter = new MultiSelectFilter(page, 'All Statuses');
-    this.roleFilter = new MultiSelectFilter(page, 'All Roles');
-    this.companyFilter = new MultiSelectFilter(page, 'All Companies');
+    this.statusFilter = new SelectFilter(page, 'All Statuses');
+    this.roleFilter = new SelectFilter(page, 'All Roles');
+    this.companyFilter = new SelectFilter(page, 'All Companies');
     this.table = page.getByRole('table');
     this.rows = this.table.getByRole('row').filter({ has: page.getByRole('cell') });
     this.bulk = {
@@ -223,6 +197,11 @@ export class UserManagementPage {
     this.batchDialog = new BatchUploadDialog(page);
     this.approveDialog = new ConfirmDialog(page, /^Approve (this user|\d+ users)\?$/, /^Approve/);
     this.rejectDialog = new ConfirmDialog(page, /^Reject (this user|\d+ users)\?$/, /^Reject/);
+    const statusUpdated = page.getByRole('dialog', { name: 'User Status Updated' });
+    this.statusUpdatedDialog = {
+      root: statusUpdated,
+      refreshButton: statusUpdated.getByRole('button', { name: 'Refresh' }),
+    };
     this.emptyState = new EmptyStateComponent(page);
     this.pagination = new PaginationComponent(page);
     this.sidebar = new SidebarComponent(page);
@@ -315,6 +294,26 @@ export class UserManagementPage {
   }
 
   /** Clean-up as a Super user: puts a Pending user back to Unassigned; does nothing when it isn't listed */
+  /**
+   * The first `count` of `pool` that are still Unassigned, for tests that approve users for good.
+   * Throws when too few are left, so the run says to top up the pool instead of failing somewhere later
+   */
+  async takeUnassigned(pool: string[], count: number) {
+    const picked: string[] = [];
+    for (const email of pool) {
+      if (picked.length === count) break;
+      await this.search(email);
+      await this.row(email).waitFor();
+      if ((await this.cell(email, 'Status').innerText()) === '-') picked.push(email);
+    }
+    if (picked.length < count) {
+      throw new Error(
+        `Only ${picked.length} of ${count} Unassigned users left in the pool: add more emails in .env`,
+      );
+    }
+    return picked;
+  }
+
   async rejectIfPending(email: string) {
     await this.search(email);
     await this.row(email).or(this.emptyState.title).waitFor();

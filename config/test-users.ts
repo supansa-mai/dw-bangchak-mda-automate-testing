@@ -28,4 +28,15 @@ export const testUsers = {
   get review() {
     return emailsFrom('USER_REVIEW_EMAILS');
   },
+  /**
+   * Unassigned users approve-reject.spec approves. Approving can't be undone, so each run uses up 5 of them;
+   * the spec takes the ones still Unassigned and fails with a clear message when too few are left
+   */
+  get approvePool() {
+    return emailsFrom('USER_APPROVE_POOL_EMAILS');
+  },
+  /** Unassigned users edit-user.spec makes System Admin (approved at once, can't be undone): 2 per run */
+  get systemAdminPool() {
+    return emailsFrom('USER_SYSADMIN_POOL_EMAILS');
+  },
 };

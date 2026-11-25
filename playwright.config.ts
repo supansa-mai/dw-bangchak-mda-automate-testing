@@ -2,9 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 import { baseURL, scaled } from './config/environments';
 
 const video = process.env.VIDEO === '1';
+// Tests tagged @uses-up-users approve pool users for good, so they only run with USE_UP_USERS=1 (npm run test:use-up-users)
+const useUpUsers = process.env.USE_UP_USERS === '1';
 
 export default defineConfig({
   testDir: './tests',
+  grepInvert: useUpUsers ? undefined : /@uses-up-users/,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

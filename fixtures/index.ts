@@ -1,4 +1,5 @@
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
+import { ActivityLogPage } from '@pages/activity-log.page';
 import { CompanyManagementPage } from '@pages/company-management.page';
 import { SignInPage } from '@pages/sign-in.page';
 import { UserManagementPage } from '@pages/user-management.page';
@@ -13,6 +14,7 @@ type Fixtures = {
   signInPage: SignInPage;
   companyManagementPage: CompanyManagementPage;
   userManagementPage: UserManagementPage;
+  activityLogPage: ActivityLogPage;
   /** A second browser window signed in as another role, e.g. the Super user who approves; closed after the test */
   openAs: (role: Role) => Promise<Page>;
 };
@@ -30,6 +32,9 @@ export const test = base.extend<Options & Fixtures>({
   },
   userManagementPage: async ({ page }, use) => {
     await use(new UserManagementPage(page));
+  },
+  activityLogPage: async ({ page }, use) => {
+    await use(new ActivityLogPage(page));
   },
   openAs: async ({ browser, baseURL, locale, timezoneId }, use) => {
     const contexts: BrowserContext[] = [];

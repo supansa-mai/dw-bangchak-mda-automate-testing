@@ -2,6 +2,8 @@ import { test, expect, todo } from '@fixtures';
 import { credentialsFor } from '@config/auth';
 import { uniqueName } from '@helpers/test-data';
 import { isSorted } from '@helpers/table';
+import { expectLogged, expectNewLog } from '@helpers/activity-log';
+import type { LogQuery } from '@pages/activity-log.page';
 import { COLUMNS, ROLE_NAMES, type Column } from '@pages/user-management.page';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
@@ -61,7 +63,21 @@ test.describe('TS01-TC01 System Admin สามารถเห็นหน้า
   });
 
   todo('ผู้ใช้หลาย Company แสดง 2 บริษัทและ badge "+n" (รอ test user ที่มี 3 บริษัทขึ้นไป)');
-  todo('บันทึก Access log เมื่อเข้าหน้า (รอ ActivityLogPage, dev ยังไม่ยืนยัน Access log)');
+
+  // Jira CBM-24 still has Access logs waiting for dev to confirm
+  test('บันทึก Access log เมื่อเข้าหน้า', async ({ userManagementPage: users, activityLogPage: logs }) => {
+    const query = {
+      email: credentialsFor('system-admin').email,
+      activity: 'Access',
+      object: 'User management',
+    } satisfies LogQuery;
+    const before = await logs.count(query);
+
+    await users.goto();
+    await expect(users.heading).toBeVisible();
+
+    await expect(await expectNewLog(logs, query, before, 'accessed User management')).toBeVisible();
+  });
 });
 
 test.describe('TS01-TC02 ตรวจสอบการเรียงลำดับ default ของรายการผู้ใช้งาน', () => {
@@ -140,39 +156,46 @@ test.describe('TS01-TC03 การค้นหาและกรองผู้�
     await expect(users.rows).toHaveCount(0);
   });
 
-  test('เลือกหลายตัวเลือก แสดงคั่นด้วย comma และผลตรงทุกตัวเลือก', async ({ userManagementPage: users }) => {
-    await users.roleFilter.select('System Admin', 'Super User');
+  test('เลือกค่าใหม่ แทนค่าเดิมในตัวกรอง', async ({ userManagementPage: users }) => {
+    await users.roleFilter.select('Super User');
 
-    await expect(users.roleFilter.trigger).toContainText('System Admin, Super User');
+    await users.roleFilter.select('System Admin');
+
+    await expect(users.roleFilter.trigger).toContainText('System Admin');
+    await expect(users.roleFilter.trigger).not.toContainText('Super User');
     await expect
-      .poll(async () =>
-        (await users.columnTexts('Role')).every((r) => ['System Admin', 'Super User'].includes(r)),
-      )
-      .toBe(true);
+      .poll(async () => new Set(await users.columnTexts('Role')))
+      .toEqual(new Set(['System Admin']));
   });
 
-  test('เลือกเกิน 4 ตัวเลือก แสดง badge "+n"', async ({ page, userManagementPage: users }) => {
-    // Status has only 3 options and Role 4, so Company is the one filter that can go past 4;
-    // the AUTO companies left by the Company Management tests make sure there are more than 4
-    await users.companyFilter.trigger.click();
-    const companies = (await users.companyFilter.options.allTextContents()).slice(0, 5);
-    await page.keyboard.press('Escape');
-
-    await users.companyFilter.select(...companies);
-
-    await expect(users.companyFilter.trigger).toContainText('+1');
-  });
-
-  test('กดกากบาท ล้างตัวเลือกทั้งหมดกลับเป็นค่าเริ่มต้น', async ({ userManagementPage: users }) => {
-    await users.roleFilter.select('System Admin', 'Super User');
+  // Verify on the real page: the single-select filters still have a clear (x) button
+  test('กดกากบาท ล้างตัวเลือกกลับเป็นค่าเริ่มต้น', async ({ userManagementPage: users }) => {
+    await users.roleFilter.select('System Admin');
 
     await users.roleFilter.clearButton.click();
 
     await expect(users.roleFilter.trigger).toContainText('All Roles');
-    await expect.poll(async () => new Set(await users.columnTexts('Role')).size).toBeGreaterThan(2);
+    await expect.poll(async () => new Set(await users.columnTexts('Role')).size).toBeGreaterThan(1);
   });
 
-  todo('บันทึก Search log พร้อมคำค้น ตัวกรอง และจำนวนผลลัพธ์ (รอ ActivityLogPage)');
+  test('บันทึก Search log พร้อมคำค้น ตัวกรอง และจำนวนผลลัพธ์', async ({
+    userManagementPage: users,
+    activityLogPage: logs,
+  }) => {
+    const keyword = uniqueName('NotFound');
+    await users.statusFilter.select('Approved');
+    await users.search(keyword);
+    await expect(users.emptyState.title).toBeVisible();
+
+    const log = await expectLogged(
+      logs,
+      { email: credentialsFor('system-admin').email, activity: 'Search', object: 'User management' },
+      `"${keyword}"`,
+    );
+
+    await expect(log).toContainText('status "Approved"');
+    await expect(log).toContainText('found 0 result(s)');
+  });
 });
 
 test.describe('TS01-TC04 ตรวจสอบ Sorting และ Pagination รายการผู้ใช้งาน', () => {

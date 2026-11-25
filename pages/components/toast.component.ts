@@ -1,5 +1,8 @@
 import type { Locator, Page } from '@playwright/test';
 
+/** The generic toast for any failed API call, the same on every page */
+export const TOAST_API_ERROR = { title: 'Something went wrong', message: 'Please try again.' } as const;
+
 export class ToastComponent {
   private readonly root: Locator;
 

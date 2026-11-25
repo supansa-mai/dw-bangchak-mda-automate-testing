@@ -1,4 +1,7 @@
-import { test, expect, todo } from '@fixtures';
+import { test, expect } from '@fixtures';
+import { credentialsFor } from '@config/auth';
+import { expectLogged, expectNewLog } from '@helpers/activity-log';
+import type { LogQuery } from '@pages/activity-log.page';
 import { AUTO_PREFIX, uniqueName } from '@helpers/test-data';
 import { isSorted } from '@helpers/table';
 
@@ -34,7 +37,20 @@ test.describe('TS01-TC01 System Admin สามารถเห็นหน้า
     }
   });
 
-  todo('บันทึก Access log เมื่อเข้าหน้า (รอ ActivityLogPage, dev ยังไม่ยืนยัน Access log)');
+  // Jira CBM-24 still has Access logs waiting for dev to confirm
+  test('บันทึก Access log เมื่อเข้าหน้า', async ({ companyManagementPage: companies, activityLogPage: logs }) => {
+    const query = {
+      email: credentialsFor('system-admin').email,
+      activity: 'Access',
+      object: 'Company management',
+    } satisfies LogQuery;
+    const before = await logs.count(query);
+
+    await companies.goto();
+    await expect(companies.heading).toBeVisible();
+
+    await expect(await expectNewLog(logs, query, before, 'accessed Company management')).toBeVisible();
+  });
 });
 
 test.describe('TS01-TC02 การค้นหารายการบริษัท', () => {
@@ -80,7 +96,26 @@ test.describe('TS01-TC02 การค้นหารายการบริษ�
     await expect(companies.rows.first()).toBeVisible();
   });
 
-  todo('บันทึก Search log พร้อมคำค้นและจำนวนผลลัพธ์ (รอ ActivityLogPage)');
+  test('บันทึก Search log พร้อมคำค้นและจำนวนผลลัพธ์', async ({
+    companyManagementPage: companies,
+    activityLogPage: logs,
+  }) => {
+    const keyword = uniqueName('NotFound');
+    await companies.search(keyword);
+    await expect(companies.emptyState.title).toBeVisible();
+
+    const log = await expectLogged(
+      logs,
+      {
+        email: credentialsFor('system-admin').email,
+        activity: 'Search',
+        object: 'Company management',
+      },
+      `company_name "${keyword}"`,
+    );
+
+    await expect(log).toContainText('found 0 result(s)');
+  });
 });
 
 test.describe('TS01-TC03 ตรวจสอบการ Sorting และ Pagination รายการบริษัท', () => {

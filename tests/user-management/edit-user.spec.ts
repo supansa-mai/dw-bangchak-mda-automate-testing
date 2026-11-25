@@ -1,5 +1,9 @@
+import type { Page } from '@playwright/test';
 import { test, expect, todo } from '@fixtures';
+import { credentialsFor, type Role } from '@config/auth';
 import { testUsers } from '@config/test-users';
+import { expectNewLog } from '@helpers/activity-log';
+import type { LogQuery } from '@pages/activity-log.page';
 import { TOAST_USER_EDITED, UserManagementPage, type UserForm } from '@pages/user-management.page';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
@@ -104,7 +108,28 @@ test.describe('TS03-TC01 System Admin : กำหนด Role,Company ให้�
     await expect(users.cell(email, 'Role')).toHaveText('-');
   });
 
-  todo('บันทึก View log ตอนเปิด modal และ Edit log พร้อมค่าก่อน/หลัง (รอ ActivityLogPage)');
+  test('บันทึก View log ตอนเปิด modal และ Edit log พร้อมค่าก่อน/หลัง', async ({
+    userManagementPage: users,
+    activityLogPage: logs,
+  }) => {
+    const email = testUsers.unassigned;
+    const admin = credentialsFor('system-admin').email;
+    const views = { email: admin, activity: 'View', object: 'User' } satisfies LogQuery;
+    const edits = { email: admin, activity: 'Edit', object: 'User' } satisfies LogQuery;
+    const viewsBefore = await logs.count(views);
+    const editsBefore = await logs.count(edits);
+    await users.goto();
+    await users.search(email);
+    // View and Edit logs name the user, not the email
+    const name = await users.cell(email, 'Name').innerText();
+
+    await users.editUser(email, { role: 'End User', companies: ['BCP'] });
+    await expect(users.toast.withTitle(TOAST_USER_EDITED)).toBeVisible();
+
+    const edit = await expectNewLog(logs, edits, editsBefore, `edited User "${name}"`);
+    await expect(edit).toContainText(/Role: .+ → End User; Company: .+ → BCP/);
+    await expect(await expectNewLog(logs, views, viewsBefore, `viewed User "${name}"`)).toBeVisible();
+  });
 });
 
 test.describe('TS03-TC02 ตรวจสอบการเลือก Company ตาม Role', () => {
@@ -176,8 +201,40 @@ test.describe('TS03-TC02 ตรวจสอบการเลือก Company �
   });
 });
 
+/** Checks a new System Admin: All Company, Approved + Active at once, and nothing for a Super user to approve */
+async function expectSystemAdmin(
+  users: UserManagementPage,
+  openAs: (role: Role) => Promise<Page>,
+  email: string,
+) {
+  await expect(users.cell(email, 'Company')).toHaveText(/All Company/);
+  await expect(users.cell(email, 'Status')).toHaveText('Approved');
+  await expect(users.cell(email, 'Activation')).toHaveText('Active');
+
+  await test.step('ไม่อยู่ในรายการรออนุมัติของ Super user', async () => {
+    const superUser = new UserManagementPage(await openAs('super-user'));
+    await superUser.goto();
+    await superUser.search(email);
+    await expect(superUser.approveButtonOf(email)).toBeHidden();
+  });
+}
+
 test.describe('TS03-TC03 การกำหนด Role = System Admin ไม่ต้องรออนุมัติ', () => {
-  todo('System Admin ได้ Approved + Active ทันที (รอ dev reset: ผู้ใช้ที่อนุมัติแล้วย้อนกลับเป็น Unassigned ไม่ได้)');
+  test(
+    'ผู้ใช้ Unassigned เป็น System Admin แล้ว Approved + Active ทันที',
+    { tag: '@uses-up-users' },
+    async ({ userManagementPage: users, openAs }) => {
+      const [email] = await users.takeUnassigned(testUsers.systemAdminPool, 1);
+      await users.openEditDialog(email);
+      await users.editDialog.setRole('System Admin');
+      await expect(users.editDialog.companySelect).toContainText('All Company (System Admin)');
+
+      await users.editDialog.saveAndConfirm();
+
+      await expect(users.toast.withTitle(TOAST_USER_EDITED)).toBeVisible();
+      await expectSystemAdmin(users, openAs, email);
+    },
+  );
 });
 
 test.describe('TS03-TC04 การแก้ไข Role / Company ของผู้ใช้งาน', () => {
@@ -220,7 +277,6 @@ test.describe('TS03-TC04 การแก้ไข Role / Company ของผู
     await expect(users.cell(email, 'Status')).toHaveText('Approved');
   });
 
-  todo('ผู้ใช้ Pending เปลี่ยนเป็น System Admin แล้วเป็น Approved ทันที (รอ dev reset ผู้ใช้ที่อนุมัติแล้ว)');
   todo('Super user BCPG ที่เพิ่มใหม่เห็นผู้ใช้ (รอบัญชี Super user BCPG ใน .env)');
 });
 
@@ -235,6 +291,20 @@ test.describe('TS03-TC04 การแก้ไข Role / Company ของผู
     await expect(users.cell(email, 'Role')).toHaveText('Super User');
     await expect(users.cell(email, 'Status')).toHaveText('Pending');
   });
+
+  test(
+    'ผู้ใช้ Pending เปลี่ยนเป็น System Admin แล้ว Approved + Active ทันที',
+    { tag: '@uses-up-users' },
+    async ({ userManagementPage: users, openAs }) => {
+      const [email] = await users.takeUnassigned(testUsers.systemAdminPool, 1);
+      await users.editUser(email, { role: 'End User', companies: ['BCP'] });
+      await expect(users.cell(email, 'Status')).toHaveText('Pending');
+
+      await users.editUser(email, { role: 'System Admin' });
+
+      await expectSystemAdmin(users, openAs, email);
+    },
+  );
 
   todo('Super user บริษัทเดิมไม่เห็น / บริษัทใหม่เห็นผู้ใช้ Pending (รอบัญชี Super user BCPG ใน .env)');
 });

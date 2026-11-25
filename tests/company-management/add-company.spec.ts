@@ -1,8 +1,10 @@
 import type { Page } from '@playwright/test';
-import { test, expect, todo } from '@fixtures';
+import { test, expect } from '@fixtures';
 import { credentialsFor } from '@config/auth';
+import { expectLogged } from '@helpers/activity-log';
 import { uniqueName } from '@helpers/test-data';
 import { TOAST_COMPANY_ADDED } from '@pages/company-management.page';
+import { TOAST_API_ERROR } from '@pages/components/toast.component';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
 
@@ -34,7 +36,7 @@ test.describe('TS02-TC01 System Admin สามารถเพิ่มบริ
   test(
     'เพิ่มบริษัทโดยไม่เลือก Main Company สำเร็จ และเลือกได้ใน Edit User Detail',
     { tag: ['@smoke', '@creates-data'] },
-    async ({ page, companyManagementPage: companies, userManagementPage: users }) => {
+    async ({ page, companyManagementPage: companies, userManagementPage: users, activityLogPage: logs }) => {
       // Thai and special characters in the name also check that the table shows them as plain text
       const name = `${uniqueName()} บางจาก & Co. <test>`;
 
@@ -57,13 +59,23 @@ test.describe('TS02-TC01 System Admin สามารถเพิ่มบริ
         await page.keyboard.press('Escape');
         await users.editDialog.cancelButton.click();
       });
+
+      await test.step('บันทึก Create log 1 รายการ ไม่มีส่วน Main company', async () => {
+        const log = await expectLogged(
+          logs,
+          { email: credentialsFor('system-admin').email, activity: 'Create', object: 'Company' },
+          `created Company "${name}"`,
+        );
+        await expect(log).toHaveCount(1);
+        await expect(log).not.toContainText('Main company');
+      });
     },
   );
 
   test(
     'เพิ่มบริษัทพร้อมเลือก Main Company สำเร็จ',
     { tag: '@creates-data' },
-    async ({ companyManagementPage: companies }) => {
+    async ({ companyManagementPage: companies, activityLogPage: logs }) => {
       const name = uniqueName();
 
       await companies.addCompany({ name, mainCompany: 'BCP' });
@@ -71,6 +83,15 @@ test.describe('TS02-TC01 System Admin สามารถเพิ่มบริ
       await expect(companies.toast.withTitle(TOAST_COMPANY_ADDED)).toBeVisible();
       await companies.search(name);
       await expect(companies.mainCompanyOf(name)).toHaveText('BCP');
+
+      await test.step('บันทึก Create log พร้อม Main company', async () => {
+        const log = await expectLogged(
+          logs,
+          { email: credentialsFor('system-admin').email, activity: 'Create', object: 'Company' },
+          `created Company "${name}"`,
+        );
+        await expect(log).toContainText('with Main company = BCP');
+      });
     },
   );
 
@@ -86,12 +107,10 @@ test.describe('TS02-TC01 System Admin สามารถเพิ่มบริ
     await dialog.fill({ name });
     await dialog.submit();
 
-    // The error message itself is still waiting for design (RR-28)
+    await expect(companies.toast.withTitle(TOAST_API_ERROR.title)).toContainText(TOAST_API_ERROR.message);
     await expect(dialog.root).toBeVisible();
     await expect(dialog.companyNameInput).toHaveValue(name);
   });
-
-  todo('บันทึก Create log และไม่บันทึก log ตอนเปิด/ปิด modal (รอ ActivityLogPage)');
 });
 
 test.describe('TS02-TC02 ตรวจสอบ Main Company dropdown (Optional)', () => {

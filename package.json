@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "playwright test",
     "test:reuse-auth": "playwright test --project=chromium --no-deps",
-    "test:no-data": "playwright test --grep-invert @creates-data"
+    "test:no-data": "playwright test --grep-invert @creates-data",
+    "test:use-up-users": "USE_UP_USERS=1 playwright test --grep @uses-up-users"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

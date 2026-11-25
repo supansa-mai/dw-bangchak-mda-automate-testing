@@ -1,8 +1,10 @@
 import type { Page } from '@playwright/test';
 import { test, expect, todo } from '@fixtures';
-import type { Role } from '@config/auth';
+import { credentialsFor, type Role } from '@config/auth';
 import { testUsers } from '@config/test-users';
-import { TOAST_USER_REJECTED, UserManagementPage } from '@pages/user-management.page';
+import { expectNewLog } from '@helpers/activity-log';
+import { ActivityLogPage, type LogQuery } from '@pages/activity-log.page';
+import { TOAST_USER_APPROVED, TOAST_USER_REJECTED, UserManagementPage } from '@pages/user-management.page';
 
 test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the real page');
 
@@ -10,11 +12,28 @@ test.fixme(true, 'Draft: no UAT URL/account yet, locators not verified on the re
 test.describe.configure({ mode: 'serial' });
 test.use({ role: 'super-user' });
 
-/** A System Admin assigns `emails` to End User of BCP, so the Super user (BCP) sees them as Pending */
-async function makePending(openAs: (role: Role) => Promise<Page>, emails: string[]) {
+const superUserLogs = (activity: 'Approve' | 'Reject'): LogQuery => ({
+  email: credentialsFor('super-user').email,
+  activity,
+  object: 'User',
+});
+
+/** A System Admin assigns `emails` to `role` of BCP, so the Super user (BCP) sees them as Pending */
+async function makePending(
+  openAs: (role: Role) => Promise<Page>,
+  emails: string[],
+  role: 'End User' | 'Super User' = 'End User',
+) {
   const admin = new UserManagementPage(await openAs('system-admin'));
   await admin.goto();
-  for (const email of emails) await admin.editUser(email, { role: 'End User', companies: ['BCP'] });
+  for (const email of emails) await admin.editUser(email, { role, companies: ['BCP'] });
+}
+
+/** Users from the approve pool that are still Unassigned; approving them uses them up for good */
+async function takeFromApprovePool(openAs: (role: Role) => Promise<Page>, count: number) {
+  const admin = new UserManagementPage(await openAs('system-admin'));
+  await admin.goto();
+  return admin.takeUnassigned(testUsers.approvePool, count);
 }
 
 test.afterEach(async ({ userManagementPage: users }) => {
@@ -57,9 +76,40 @@ test.describe('TS07-TC01 Super user อนุมัติผู้ใช้ง�
     await expect(users.cell(email, 'Status')).toHaveText('Pending');
   });
 
-  todo('กด Approve แล้ว Approved + Active (รอ dev reset: ผู้ใช้ที่อนุมัติแล้วย้อนกลับไม่ได้)');
-  todo('Super user อนุมัติ Super user บริษัทเดียวกันได้ (รอ dev reset ผู้ใช้ที่อนุมัติแล้ว)');
-  todo('บันทึก Approve log (รอ ActivityLogPage)');
+  // Approving a new Super user of BCP also covers "Super user อนุมัติ Super user บริษัทเดียวกันได้"
+  test(
+    'กด Approve แล้ว Approved + Active และบันทึก Approve log',
+    { tag: '@uses-up-users' },
+    async ({ userManagementPage: users, openAs }) => {
+      const [email] = await takeFromApprovePool(openAs, 1);
+      await makePending(openAs, [email], 'Super User');
+      const adminLogs = new ActivityLogPage(await openAs('system-admin'));
+      const before = await adminLogs.count(superUserLogs('Approve'));
+      await users.goto();
+      await users.search(email);
+
+      await users.approveButtonOf(email).click();
+      await users.approveDialog.confirmButton.click();
+
+      await expect(users.toast.withTitle(TOAST_USER_APPROVED)).toBeVisible();
+      await expect(users.cell(email, 'Status')).toHaveText('Approved');
+      await expect(users.cell(email, 'Activation')).toHaveText('Active');
+
+      await test.step('System Admin เห็น Approved + Active', async () => {
+        const admin = new UserManagementPage(await openAs('system-admin'));
+        await admin.goto();
+        await admin.search(email);
+        await expect(admin.cell(email, 'Status')).toHaveText('Approved');
+        await expect(admin.cell(email, 'Activation')).toHaveText('Active');
+      });
+
+      await test.step('บันทึก Approve log', async () => {
+        const log = await expectNewLog(adminLogs, superUserLogs('Approve'), before, email);
+        await expect(log).toContainText('approved user');
+        await expect(log).toContainText('Pending → Approve (Role Super User');
+      });
+    },
+  );
 });
 
 test.describe('TS07-TC02 Super user อนุมัติผู้ใช้งานหลายคนพร้อมกัน', () => {
@@ -96,10 +146,71 @@ test.describe('TS07-TC02 Super user อนุมัติผู้ใช้ง�
     );
   });
 
-  todo('กด Approve (3) แล้วทั้ง 3 คน Approved + Active (รอ dev reset ผู้ใช้ที่อนุมัติแล้ว)');
-  todo(
-    'Super user 2 บริษัทอนุมัติพร้อมกัน บันทึกเฉพาะที่ยัง Pending (รอ Super user BCPG และ dev reset; Expected ยังไม่ชัด)',
+  test(
+    'กด Approve (3) แล้วทั้ง 3 คน Approved + Active และบันทึก log รวม 1 รายการ',
+    { tag: '@uses-up-users' },
+    async ({ userManagementPage: users, openAs }) => {
+      const emails = await takeFromApprovePool(openAs, 3);
+      await makePending(openAs, emails);
+      const adminLogs = new ActivityLogPage(await openAs('system-admin'));
+      const before = await adminLogs.count(superUserLogs('Approve'));
+      await users.goto();
+      await users.statusFilter.select('Pending');
+      for (const email of emails) await users.checkboxOf(email).check();
+
+      await users.bulk.approveButton.click();
+      await users.approveDialog.confirmButton.click();
+
+      await expect(users.toast.withTitle(TOAST_USER_APPROVED)).toBeVisible();
+      await expect(users.bulk.selected).toHaveText('Selected 0 items');
+      await users.goto();
+      for (const email of emails) {
+        await users.search(email);
+        await expect(users.cell(email, 'Status')).toHaveText('Approved');
+        await expect(users.cell(email, 'Activation')).toHaveText('Active');
+      }
+
+      await test.step('Approve log 1 รายการรวมทั้ง 3 คน', async () => {
+        const log = await expectNewLog(adminLogs, superUserLogs('Approve'), before, 'approved 3 user(s)');
+        for (const email of emails) await expect(log).toContainText(email);
+        await expect(log).toContainText('success 3, failed 0');
+      });
+    },
   );
+
+  // Sheet has a Super user of BCPG approve first; a second window of the same Super user leaves the page just as stale
+  test(
+    'อนุมัติพร้อมกัน 2 หน้าจอ: มีคนอนุมัติไปก่อน ไม่บันทึกและให้ Refresh',
+    { tag: '@uses-up-users' },
+    async ({ userManagementPage: users, openAs }) => {
+      const [approvedFirst] = await takeFromApprovePool(openAs, 1);
+      const [stillPending, alsoPending] = testUsers.review;
+      const emails = [approvedFirst, stillPending, alsoPending];
+      await makePending(openAs, emails);
+      await users.goto();
+      await users.statusFilter.select('Pending');
+      for (const email of emails) await users.checkboxOf(email).check();
+
+      const otherWindow = new UserManagementPage(await openAs('super-user'));
+      await otherWindow.goto();
+      await otherWindow.search(approvedFirst);
+      await otherWindow.approveButtonOf(approvedFirst).click();
+      await otherWindow.approveDialog.confirmButton.click();
+      await expect(otherWindow.cell(approvedFirst, 'Status')).toHaveText('Approved');
+
+      await users.bulk.approveButton.click();
+      await users.approveDialog.confirmButton.click();
+
+      await expect(users.statusUpdatedDialog.root).toBeVisible();
+      await users.statusUpdatedDialog.refreshButton.click();
+      for (const email of [stillPending, alsoPending]) {
+        await users.search(email);
+        await expect(users.cell(email, 'Status')).toHaveText('Pending');
+      }
+    },
+  );
+
+  todo('Super user คนหนึ่งอนุมัติ อีกคนปฏิเสธคนเดียวกันพร้อมกัน (ข้อความแจ้งใน sheet ยังเป็น draft)');
 });
 
 test.describe('TS08-TC01 Super user ปฏิเสธผู้ใช้งาน', () => {
@@ -126,6 +237,8 @@ test.describe('TS08-TC01 Super user ปฏิเสธผู้ใช้งา�
     async ({ userManagementPage: users, openAs }) => {
       const [email] = testUsers.review;
       await makePending(openAs, [email]);
+      const adminLogs = new ActivityLogPage(await openAs('system-admin'));
+      const before = await adminLogs.count(superUserLogs('Reject'));
       await users.goto();
 
       await users.rejectUser(email);
@@ -149,16 +262,25 @@ test.describe('TS08-TC01 Super user ปฏิเสธผู้ใช้งา�
         await users.search(email);
         await expect(users.cell(email, 'Status')).toHaveText('Pending');
       });
+
+      await test.step('บันทึก Reject log', async () => {
+        const log = await expectNewLog(adminLogs, superUserLogs('Reject'), before, email);
+        await expect(log).toContainText('rejected user');
+        await expect(log).toContainText('Pending → Reject');
+      });
     },
   );
-
-  todo('บันทึก Reject log พร้อมเหตุผล (รอ ActivityLogPage; ช่องเหตุผลใน modal ยังไม่ยืนยัน)');
 });
 
 test.describe('TS08-TC02 Super user ปฏิเสธผู้ใช้งานหลายคนพร้อมกัน', () => {
-  test('เลือก 3 คนแล้ว Reject ทั้งหมดหายจากรายการ', async ({ userManagementPage: users, openAs }) => {
+  test('เลือก 3 คนแล้ว Reject ทั้งหมดหายจากรายการ และบันทึก log รวม 1 รายการ', async ({
+    userManagementPage: users,
+    openAs,
+  }) => {
     const emails = testUsers.review;
     await makePending(openAs, emails);
+    const adminLogs = new ActivityLogPage(await openAs('system-admin'));
+    const before = await adminLogs.count(superUserLogs('Reject'));
     await users.goto();
     await users.statusFilter.select('Pending');
     for (const email of emails) await users.checkboxOf(email).check();
@@ -170,7 +292,11 @@ test.describe('TS08-TC02 Super user ปฏิเสธผู้ใช้งา�
 
     await expect(users.toast.withTitle(TOAST_USER_REJECTED)).toBeVisible();
     for (const email of emails) await expect(users.row(email)).toBeHidden();
-  });
 
-  todo('บันทึก Reject log 1 รายการรวม 3 คน (รอ ActivityLogPage)');
+    await test.step('Reject log 1 รายการรวมทั้ง 3 คน', async () => {
+      const log = await expectNewLog(adminLogs, superUserLogs('Reject'), before, 'rejected 3 user(s)');
+      for (const email of emails) await expect(log).toContainText(email);
+      await expect(log).toContainText('success 3, failed 0');
+    });
+  });
 });
