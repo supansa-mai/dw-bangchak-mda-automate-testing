@@ -75,9 +75,9 @@ import { test, expect } from '@fixtures';
 test.use({ role: 'super-user' }); // default: system-admin, null = signed out
 
 test.describe('TS02-TC01 ระบบพาไปหน้า Home ตาม Role หลังเข้าสู่ระบบสำเร็จ', () => {
-  test('Super user เห็นหน้า My Request', async ({ page }) => {
+  test('Super user เห็นหน้า Workspace', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'My Request' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Workspace' })).toBeVisible();
   });
 });
 ```

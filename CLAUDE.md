@@ -22,7 +22,7 @@ Maintained by one QA. Follow README conventions; import `{ test, expect }` from 
 - Microsoft Azure SSO only, MFA required by BCP policy → `npm run auth:manual` saves sessions; then `--no-deps`.
 - Roles (fixture option `role`): `system-admin`, `super-user`, `end-user`, `uploader`; `null` = signed out.
 - Session expires after ~15 min idle (TS01-TC02).
-- Home page per role: System Admin → User Management, Super user → My Request, End user → Workspace, Uploader → Data source.
+- Home page per role: System Admin → User Management, Super user → Workspace, End user → Workspace, Uploader → Data source.
 
 ## Reuse from dw-postmax-automate-testing (port to TS when a case needs it)
 
