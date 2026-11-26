@@ -1,4 +1,4 @@
-import { test, expect, todo } from '@fixtures';
+import { test, expect } from '@fixtures';
 import type { Role } from '@config/auth';
 import { AccessDeniedComponent } from '@pages/components/access-denied.component';
 import { SidebarComponent } from '@pages/components/sidebar.component';
@@ -97,6 +97,13 @@ const DENIED: { role: Role; label: string; paths: string[]; back: string; home: 
     back: 'Back to Workspace',
     home: 'Workspace',
   },
+  {
+    role: 'system-admin',
+    label: 'System Admin',
+    paths: ['/workspace'],
+    back: 'Back to User Management',
+    home: 'User Management',
+  },
 ];
 
 test.describe('TS02-TC02 ตรวจสอบการเข้าหน้าที่ไม่มีสิทธิ์ผ่าน URL / API โดยตรง', () => {
@@ -117,6 +124,4 @@ test.describe('TS02-TC02 ตรวจสอบการเข้าหน้า�
       }
     });
   }
-
-  todo('System Admin เปิดหน้าที่ไม่มีสิทธิ์ (sheet ยังไม่ระบุหน้า "???")');
 });
